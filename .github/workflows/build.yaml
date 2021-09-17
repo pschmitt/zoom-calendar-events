@@ -26,4 +26,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ github_repository }}:latest
+          tags: ${{ github.repository }}:latest
