@@ -156,42 +156,46 @@ def exchange_get_current_zoom_meetings(
 
     # FIXME This regex may be too greedy
     re_zoom = re.compile(r'href="(?P<url>https://zoom.us/j/[^"]+)"')
+    # FIXME This requires HTML formatting
     re_ms_teams = re.compile(
         r'href="(?P<url>https://teams.microsoft.com/l/meetup-join[^"]+)"'
     )
-    location_filter = "zoom.us" if only_with_url else "zoom"
+    location_filter_zoom = "zoom.us" if only_with_url else "zoom"
     for cal in calendars:
         LOGGER.info(f"Processing calendar {cal.name}")
         for ev in cal.all().filter(start__range=(start_date, end_date)):
             LOGGER.debug(f"Processing event {ev.subject} ({ev.start}-{ev.end})")
+
             location = ev.location
-            if not location or location_filter not in location.lower():
+            # Look for meeting in location
+            if not location or location_filter_zoom not in location.lower():
+                # SKIP if the body is empty
                 if not ev.body:
                     continue
                 body = ev.body.replace("\r\n", "")
-                match = re.search(
+                match_teams = re.search(
                     re_ms_teams,
                     body,
                 )
-                if match:
-                    location = match.group("url")
+                match_zoom = re.search(
+                    re_zoom,
+                    body,
+                )
+                if match_teams:
+                    location = match_teams.group("url")
                     LOGGER.info(f"Found an MS Teams meeting in the body: {location}")
+                elif match_zoom:
+                    location = match_zoom.group("url")
+                    LOGGER.info(f"Found an Zoom meeting in the body: {location}")
                 else:
-                    match = re.search(
-                        re_zoom,
-                        body,
-                    )
-                    if match:
-                        location = match.group("url")
-                        LOGGER.info(f"Found an MS Teams meeting: {location}")
-                    else:
-                        # Couldn't find a meeting url in the body
-                        continue
+                    # Couldn't find a meeting url in the body
+                    continue
 
             # Store raw zoom/teams event
             raw_events.append(ev)
 
             if isinstance(ev.start, EWSDate):
+                # FIXME This might not be strictly correct
                 start = midnight_today
                 end = midnight_tomorrow
             else:
