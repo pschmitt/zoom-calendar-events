@@ -2,32 +2,39 @@
 
 import argparse
 import json
+import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 
+import colorlog
 from appdirs import user_config_dir
 from gcsa.google_calendar import GoogleCalendar
 from exchangelib import Credentials, Account, EWSDate, EWSDateTime
 from exchangelib.folders import Calendar
 
+LOGGER = logging.getLogger(__name__)
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    # parser.set_defaults(backend="gcal")
+    parser.add_argument(
+        "--debug", "-D", action="store_true", default=False, help="Debug logging"
+    )
     parser.add_argument(
         "--calendar-filter", "-f", default="work: ", help="Calendar name filter"
     )
     parser.add_argument(
-        "--prior",
-        "-p",
+        "--before",
+        "-B",
         type=int,
         default=1,
         help="Include meetings that started X hours ago",
     )
     parser.add_argument(
         "--after",
-        "-a",
+        "-A",
         type=int,
         default=8,
         help="Include meetings that start in X hours in the future",
@@ -144,44 +151,94 @@ def exchange_get_current_zoom_meetings(
         tomorrow, datetime.min.time(), tzinfo=account.default_timezone
     )
 
-    current_events = []
+    raw_events = []
+    data = []
 
+    # FIXME This regex may be too greedy
+    re_zoom = re.compile(r'href="(?P<url>https://zoom.us/j/[^"]+)"')
+    re_ms_teams = re.compile(
+        r'href="(?P<url>https://teams.microsoft.com/l/meetup-join[^"]+)"'
+    )
     location_filter = "zoom.us" if only_with_url else "zoom"
     for cal in calendars:
-        # print(f"Processing calendar {cal}")
+        LOGGER.info(f"Processing calendar {cal.name}")
         for ev in cal.all().filter(start__range=(start_date, end_date)):
-            loc = ev.location
-            if not loc or location_filter not in loc.lower():
-                continue
+            LOGGER.debug(f"Processing event {ev.subject} ({ev.start}-{ev.end})")
+            location = ev.location
+            if not location or location_filter not in location.lower():
+                if not ev.body:
+                    continue
+                body = ev.body.replace("\r\n", "")
+                match = re.search(
+                    re_ms_teams,
+                    body,
+                )
+                if match:
+                    location = match.group("url")
+                    LOGGER.info(f"Found an MS Teams meeting in the body: {location}")
+                else:
+                    match = re.search(
+                        re_zoom,
+                        body,
+                    )
+                    if match:
+                        location = match.group("url")
+                        LOGGER.info(f"Found an MS Teams meeting: {location}")
+                    else:
+                        # Couldn't find a meeting url in the body
+                        continue
 
-            current_events.append(ev)
+            # Store raw zoom/teams event
+            raw_events.append(ev)
 
-    data = []
-    for ev in current_events:
-        if isinstance(ev.start, EWSDate):
-            start = midnight_today
-            end = midnight_tomorrow
-        else:
-            start = datetime.fromtimestamp(int(ev.start.timestamp()))
-            end = datetime.fromtimestamp(int(ev.end.timestamp()))
-        ev_data = {
-            "summary": ev.subject,
-            "start": str(ev.start),
-            "end": str(ev.end),
-            "location": ev.location,
-        }
-        data.append(ev_data)
+            if isinstance(ev.start, EWSDate):
+                start = midnight_today
+                end = midnight_tomorrow
+            else:
+                start = datetime.fromtimestamp(int(ev.start.timestamp()))
+                end = datetime.fromtimestamp(int(ev.end.timestamp()))
+            ev_data = {
+                "summary": ev.subject,
+                "start": str(ev.start),
+                "end": str(ev.end),
+                "location": location,
+            }
+            data.append(ev_data)
 
-    print(json.dumps(data))
+    # Return JSON output
+    print(json.dumps(data, indent=2))
 
 
 def main():
     args = parse_args()
+
+    # Setup logger
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(
+        colorlog.ColoredFormatter(
+            "%(log_color)s%(levelname)-8s %(message)s",
+            datefmt=None,
+            reset=True,
+            log_colors={
+                "DEBUG": "purple",
+                "INFO": "blue",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "red",
+            },
+            secondary_log_colors={},
+            style="%",
+        )
+    )
+    LOGGER.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    # logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
+    LOGGER.addHandler(handler)
+
     if args.backend == "gcal":
         gcal_get_current_zoom_meetings(
             credentials_path=args.credentials_path,
             cal_name_filter=args.calendar_filter,
-            hours_prior=args.prior,
+            hours_prior=args.before,
             hours_after=args.after,
             only_with_url=args.with_url,
         )
@@ -191,7 +248,7 @@ def main():
             username=args.username,
             password=args.password,
             cal_name_filter=args.calendar_filter,
-            hours_prior=args.prior,
+            hours_prior=args.before,
             hours_after=args.after,
             only_with_url=args.with_url,
         )
