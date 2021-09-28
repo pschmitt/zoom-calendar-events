@@ -5,5 +5,5 @@ RUN STATICX=1 CLEAN=1 DIST_PATH=/dist /entrypoint.sh /app/zoom-gcal-events.py
 FROM gcr.io/distroless/static-debian10
 COPY --from=build /dist/zoom-gcal-events_static /zoom-gcal-events
 VOLUME ["/config"]
-ENV CREDENTIALS=/config/credentials.json
+ENV GCSA_CREDENTIALS=/config/credentials.json
 ENTRYPOINT ["/zoom-gcal-events"]
