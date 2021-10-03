@@ -127,7 +127,6 @@ def exchange_get_current_zoom_meetings(
     username,
     password,
     email=None,
-    cal_name_filter="work: ",
     hours_prior=1,
     hours_after=8,
     only_with_url=True,
@@ -136,11 +135,14 @@ def exchange_get_current_zoom_meetings(
     email = email if email else username
     credentials = Credentials(username, password)
     account = Account(email, credentials=credentials, autodiscover=True)
-    calendars = [x for x in account.calendar.children] + [account.calendar]
+    calendars = [x for x in account.calendar.children if isinstance(x, Calendar)] + [
+        account.calendar
+    ]
 
     now = datetime.now(tz=account.default_timezone)
     start_date = now - timedelta(hours=hours_prior)
     end_date = now + timedelta(hours=hours_after)
+    LOGGER.debug(f"Seaching for events between {start_date} and {end_date}")
 
     today = datetime.today()
     tomorrow = today + timedelta(days=1)
@@ -163,7 +165,8 @@ def exchange_get_current_zoom_meetings(
     location_filter_zoom = "zoom.us" if only_with_url else "zoom"
     for cal in calendars:
         LOGGER.info(f"Processing calendar {cal.name}")
-        for ev in cal.all().filter(start__range=(start_date, end_date)):
+        # for ev in cal.all().filter(start__range=(start_date, end_date)):
+        for ev in cal.view(start_date, end_date):
             LOGGER.debug(f"Processing event {ev.subject} ({ev.start}-{ev.end})")
 
             location = ev.location
@@ -251,7 +254,6 @@ def main():
             email=args.email,
             username=args.username,
             password=args.password,
-            cal_name_filter=args.calendar_filter,
             hours_prior=args.before,
             hours_after=args.after,
             only_with_url=args.with_url,
