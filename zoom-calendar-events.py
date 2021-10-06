@@ -157,7 +157,7 @@ def exchange_get_current_zoom_meetings(
     data = []
 
     # FIXME This regex may be too greedy
-    re_zoom = re.compile(r'(?P<url>https://zoom.us/j/[^\s"]+)')
+    re_zoom = re.compile(r'(?P<url>https://[^/]+zoom.us/j/[^\s"]+)')
     # FIXME This requires HTML formatting
     re_ms_teams = re.compile(
         r'(?P<url>https://teams.microsoft.com/l/meetup-join[^"\s+]+)'
