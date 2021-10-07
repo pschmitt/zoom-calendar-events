@@ -183,8 +183,9 @@ def exchange_get_current_zoom_meetings(
                     LOGGER.info(
                         f"Found an Zoom meeting in the location: {online_location}"
                     )
+
+            # Look in the body
             if not online_location:
-                # look in the body
                 if not ev.body:
                     continue
                 body = ev.body.replace("\r\n", "")
@@ -207,6 +208,7 @@ def exchange_get_current_zoom_meetings(
                 else:
                     # Couldn't find a meeting url in the body
                     LOGGER.warning(f"No online_location found for event {ev.subject}")
+                    # Don't process this event further if only_with_url is set
                     if only_with_url:
                         LOGGER.warning(f"SKIP.")
                         continue
